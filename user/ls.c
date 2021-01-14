@@ -18,6 +18,7 @@ fmtname(char *path)
   if(strlen(p) >= DIRSIZ)
     return p;
   memmove(buf, p, strlen(p));
+  // 这里实现的ls命令 用空白符填充 来对文件名进行对齐
   memset(buf+strlen(p), ' ', DIRSIZ-strlen(p));
   return buf;
 }
