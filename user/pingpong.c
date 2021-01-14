@@ -3,7 +3,7 @@
 //
 #include "user.h"
 //#include <unistd.h>
-#include "../kernel/types.h"
+#include "kernel/types.h"
 //#include "string.h"
 #define buffer_size 10
 #define STDDER_FILENO 2
