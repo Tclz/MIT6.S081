@@ -6,6 +6,7 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h"
 
 uint64
 sys_exit(void)
@@ -94,4 +95,34 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+// add a new syscall
+uint64
+sys_trace(void)
+{
+    // 接收用户传递进来的mask
+    int n;
+    if(argint(0, &n) < 0)
+        return -1;
+    myproc()->mask = n;
+    return 0;
+}
+
+// sysinfo
+uint64
+sys_sysinfo(void)
+{
+    // 参考 sys_fstat() (kernel/sysfile.c) and filestat() (kernel/file.c) 中的copyout用法
+    // copy a struct sysinfo back to user space
+    struct sysinfo info;
+    uint64 addr;
+    // 获取用户态传入的sysinfo结构体
+    if(argaddr(0, &addr) < 0)
+        return -1;
+    struct proc* p = myproc();
+    info.freemem = collect_free_mem();
+    info.nproc = count_unused_process();
+    if(copyout(p->pagetable,addr,(char *)& info, sizeof(info)) < 0)
+        return -1;
+    return 0;
 }

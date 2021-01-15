@@ -255,6 +255,8 @@ growproc(int n)
 
 // Create a new process, copying the parent.
 // Sets up child kernel stack to return as if from fork() system call.
+
+// modified for syscall trace
 int
 fork(void)
 {
@@ -290,6 +292,9 @@ fork(void)
   np->cwd = idup(p->cwd);
 
   safestrcpy(np->name, p->name, sizeof(p->name));
+
+  // copy mask [ used in new syscall trace]
+  np->mask = p->mask;
 
   pid = np->pid;
 
@@ -692,4 +697,17 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+// Used in syscall sys_info
+// Count the UNUSED processes number
+uint64
+count_unused_process(void){
+    struct proc *p;
+    uint64 cnt = 0;
+    for(p = proc; p < &proc[NPROC]; p++){
+        if(p->state != UNUSED)
+            cnt++;
+    }
+    return cnt;
 }

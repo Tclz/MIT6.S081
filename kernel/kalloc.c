@@ -80,3 +80,18 @@ kalloc(void)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
 }
+
+// used for syscall sys_info.
+// Collect the free memory.
+uint64
+collect_free_mem()
+{
+   struct run* p = kmem.freelist;
+   uint64 mem = 0;
+   while(p)
+   {
+       mem ++;
+       p = p->next;
+   }
+   return mem * PGSIZE;
+}
