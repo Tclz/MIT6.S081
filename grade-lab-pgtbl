@@ -58,11 +58,12 @@ def test_count():
     assert_equal(len(matches), 2)
     assert_equal(int(matches[1]), int(matches[0]) + 3)
 
+
 @test(0, "usertests")
 def test_usertests():
     r.run_qemu(shell_script([
         'usertests'
-    ]), timeout=300)
+    ]), timeout=3600)
 
 def usertest_check(testcase, nextcase, output):
     if not re.search(r'\ntest {}: [\s\S]*OK\ntest {}'.format(testcase, nextcase), output):
