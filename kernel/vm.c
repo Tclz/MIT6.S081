@@ -382,6 +382,7 @@ u2kvmcopy(pagetable_t pagetable, pagetable_t kpagetable, uint64 oldsz, uint64 ne
       panic("u2kvmcopy: walk fails");
     pa = PTE2PA(*pte_from);
     // 清除PTE_U的标记位
+    // A page with PTE_U set cannot be accessed in kernel mode.
     flags = (PTE_FLAGS(*pte_from) & (~PTE_U));
     *pte_to = PA2PTE(pa) | flags;
   }
