@@ -117,6 +117,9 @@ printf(char *fmt, ...)
 void
 panic(char *s)
 {
+  // invoked in panic()
+  // wmy
+    backtrace();
   pr.locking = 0;
   printf("panic: ");
   printf(s);
@@ -131,4 +134,23 @@ printfinit(void)
 {
   initlock(&pr.lock, "pr");
   pr.locking = 1;
+}
+
+//wmy
+void
+backtrace()
+{
+    printf("backtrace:\n");
+    // top of the current frame
+    uint64 fp = r_fp();
+    // find the stack bottom
+    uint64 bottom = PGROUNDUP(fp);
+    uint64 return_addr;
+    while(fp < bottom)
+    {
+        return_addr = *(uint64*)(fp-8);
+        fp = *(uint64*)(fp-16);
+        printf("%p\n",return_addr);
+    }
+//    printf("%p\n",fp);
 }
