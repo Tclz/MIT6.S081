@@ -63,18 +63,66 @@ usertrap(void)
     // an interrupt will change sstatus &c registers,
     // so don't enable until done with those registers.
     intr_on();
-
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
-    printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
-    printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
-    p->killed = 1;
-  }
+      // wmy
+      // page fault
 
-  if(p->killed)
-    exit(-1);
+      // copy some code chips from uvmalloc() in vm.c
+      if (r_scause()==13 || r_scause()==15)
+      {
+//          printf("check whether the page fault occurs: r_scause() is %d\n",r_scause());
+          // the virtual address where occurs page fault.
+          uint64 va = r_stval();
+          //Kill a process if it page-faults on a virtual memory address higher than any allocated with sbrk().
+          if(va >= p->sz){
+              printf("usertrap: invalid virtual address\n");
+              p->killed = 1;
+              goto end;
+          }
+
+          // Kill a process if it page-faults on the invalid page below the user stack.
+          if (va <= PGROUNDDOWN(p->trapframe->sp))
+          {
+              printf("usertrap: guard page\n");
+              p->killed = 1;
+              goto end;
+          }
+
+          va = PGROUNDDOWN(va);
+          char* mem = kalloc();
+
+          // out of memory, kill the process
+          if(mem == 0){
+//              uvmdealloc(pagetable, a, oldsz);
+//              return 0;
+                printf("usertrap: out of memory\n");
+                p->killed = 1;
+                goto end;
+          }
+
+          memset(mem, 0, PGSIZE);
+          //mappings
+          if(mappages(p->pagetable, va, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
+              printf("usertrap: mappages falied\n");
+              kfree(mem);
+//              uvmdealloc(pagetable, a, oldsz);
+//              return 0;
+              p->killed = 1;
+              goto end;
+          }
+
+      } else{
+          printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+          printf("sepc=%p stval=%p\n", r_sepc(), r_stval());
+          p->killed = 1;
+      }
+  }
+  end:
+   if(p->killed)
+       exit(-1);
 
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2)
