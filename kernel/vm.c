@@ -311,20 +311,30 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
+//  char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
       panic("uvmcopy: pte should exist");
+//          continue;
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
+//          continue;
+//      map the parent's physical pages into the child, instead of allocating new pages.
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+//    if((mem = kalloc()) == 0)
+//      goto err;
+//    memmove(mem, (char*)pa, PGSIZE);
+// clear PTE_W and mark the page as cow page.
+    if(flags & PTE_W)
+    {
+        flags = (flags | PTE_COW) & (~PTE_W);
+        *pte = PA2PTE(pa) | flags;
+    }
+    increase_rc((void*)pa);
+    if(mappages(new, i, PGSIZE, pa, flags) != 0){
+//      kfree(mem);
       goto err;
     }
   }
@@ -358,6 +368,10 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
+
+    //wmy
+    if(cow_alloc(pagetable, va0)!=0)
+        return -1;
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;

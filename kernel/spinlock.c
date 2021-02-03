@@ -29,6 +29,7 @@ acquire(struct spinlock *lk)
   //   a5 = 1
   //   s1 = &lk->locked
   //   amoswap.w.aq a5, a5, (s1)
+  // 自旋
   while(__sync_lock_test_and_set(&lk->locked, 1) != 0)
     ;
 
@@ -36,9 +37,11 @@ acquire(struct spinlock *lk)
   // past this point, to ensure that the critical section's memory
   // references happen strictly after the lock is acquired.
   // On RISC-V, this emits a fence instruction.
+  // 内存屏障
   __sync_synchronize();
 
   // Record info about lock acquisition for holding() and debugging.
+  // 记录下持有当前锁的cpu
   lk->cpu = mycpu();
 }
 
