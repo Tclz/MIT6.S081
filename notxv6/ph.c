@@ -17,6 +17,8 @@ struct entry *table[NBUCKET];
 int keys[NKEYS];
 int nthread = 1;
 
+// wmy
+pthread_mutex_t lock[NBUCKET]; // declare a lock
 double
 now()
 {
@@ -40,6 +42,7 @@ void put(int key, int value)
 {
   int i = key % NBUCKET;
 
+  pthread_mutex_lock(&lock[i]);       // acquire lock
   // is the key already present?
   struct entry *e = 0;
   for (e = table[i]; e != 0; e = e->next) {
@@ -53,6 +56,7 @@ void put(int key, int value)
     // the new is new.
     insert(key, value, &table[i], table[i]);
   }
+  pthread_mutex_unlock(&lock[i]);     // release lock
 }
 
 static struct entry*
@@ -72,14 +76,18 @@ get(int key)
 static void *
 put_thread(void *xa)
 {
+    // 多线程下
+    // 每个线程put数据到自己负责的槽
   int n = (int) (long) xa; // thread number
   int b = NKEYS/nthread;
 
+//    pthread_mutex_lock(&lock);
   for (int i = 0; i < b; i++) {
     put(keys[b*n + i], n);
   }
+//    pthread_mutex_unlock(&lock);
 
-  return NULL;
+    return NULL;
 }
 
 static void *
@@ -115,7 +123,11 @@ main(int argc, char *argv[])
     keys[i] = random();
   }
 
-  //
+    // initialize the lock
+    for(int i=0;i<NBUCKET;++i)
+        pthread_mutex_init(&lock[i], NULL);
+
+    //
   // first the puts
   //
   t0 = now();
@@ -130,6 +142,7 @@ main(int argc, char *argv[])
   printf("%d puts, %.3f seconds, %.0f puts/second\n",
          NKEYS, t1 - t0, NKEYS / (t1 - t0));
 
+  // 必须先等put执行完 再执行get
   //
   // now the gets
   //
