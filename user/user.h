@@ -13,6 +13,8 @@ int kill(int);
 int exec(char*, char**);
 int open(const char*, int);
 int mknod(const char*, short, short);
+void* mmap(void *addr, int length, int prot, int flags, int fd, int offset);
+int munmap(void *addr, int length);
 int unlink(const char*);
 int fstat(int fd, struct stat*);
 int link(const char*, const char*);

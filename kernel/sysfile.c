@@ -484,3 +484,80 @@ sys_pipe(void)
   }
   return 0;
 }
+
+uint64 
+sys_mmap(void) {
+  uint64 addr;
+  int len, prot, flags, fd, offset;
+  struct file* pf;
+  argaddr(0,&addr);
+  argint(1,&len);
+  argint(2,&prot);
+  argint(3,&flags);
+  argfd(4,&fd,&pf);
+  argint(5,&offset);
+  if((prot & PROT_WRITE) && !pf->writable && flags == MAP_SHARED)
+    return -1UL;
+  struct proc *p = myproc();
+  for(int i = 0; i < NVMA; i ++) {
+    if(!p->vma[i].used) {
+      struct vma* v = &p->vma[i];
+      v->addr = p->sz;
+      v->len = len;
+      v->pf = pf;
+      v->prot = prot;
+      v->used = 1;
+      v->flags = flags;
+      v->offset = offset;
+      growproc(len);
+      filedup(pf);
+      begin_op();
+      ilock(pf->ip);
+      readi(pf->ip, 1, v->addr, offset, len);
+      iunlock(pf->ip);
+      end_op();
+      return v->addr;
+    }
+  }
+  return -1UL;
+}
+
+uint64
+sys_munmap(void) {
+  uint64 addr;
+  int len;
+  argaddr(0, &addr);
+  argint(1, &len);
+  struct proc *p = myproc();
+  for (int i = 0; i < NVMA; i ++) {
+    struct vma* v = p->vma + i;
+    if (addr >= v->addr && addr < v->addr + v->len && v->used) {
+      if (v->flags == MAP_SHARED) {
+        begin_op();
+        ilock(v->pf->ip);
+        writei(v->pf->ip, 1, addr, v->offset + addr - v->addr, len);
+        iunlock(v->pf->ip);
+        end_op();
+      }
+      uvmunmap(p->pagetable, addr, len/PGSIZE, 1);
+      if (addr == v->addr) {
+        if (len == v->len) {
+          fileclose(v->pf);
+        } else if (addr + len > v->addr + v->len) {
+          panic("munmap: wrong range");
+        } else {
+          v->addr = addr + len;
+          v->len -= len;
+        }
+      } else {
+        if (addr + len == v->addr + v->len) {
+          v->len = addr - v->addr;
+        } else {
+          panic("munmap: wrong range");
+        }
+      }
+      return 0;
+    }
+  }
+  return -1UL;
+}
