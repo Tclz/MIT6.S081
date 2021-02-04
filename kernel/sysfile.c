@@ -322,6 +322,30 @@ sys_open(void)
     return -1;
   }
 
+  //wmy
+    int cnt = 0, length;
+    char next[MAXPATH + 1];
+    if (!(omode & O_NOFOLLOW)) {
+        for (; cnt < 10 && ip->type == T_SYMLINK; cnt ++) {
+            readi(ip, 0, (uint64)&length, 0, 4);
+            readi(ip, 0, (uint64)next, 4, length);
+            next[length] = 0;
+            iunlockput(ip);
+            if ((ip = namei(next)) == 0) {
+                end_op();
+                return -1;
+            }
+            ilock(ip);
+        }
+    }
+
+    if (cnt >= 10) {
+        iunlockput(ip);
+        end_op();
+        return -1;
+    }
+
+
   if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
     if(f)
       fileclose(f);
@@ -483,4 +507,32 @@ sys_pipe(void)
     return -1;
   }
   return 0;
+}
+
+int len(char *array) {
+    int res = 0;
+    for(; res < MAXPATH && array[res] != 0; res ++);
+    return res;
+}
+
+//wmy
+// add a syscall for symlink
+uint64
+sys_symlink(void) {
+    char target[MAXPATH], path[MAXPATH];
+    if(argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0) {
+        return -1;
+    }
+    struct inode *newip;
+    begin_op();
+    if((newip = create(path, T_SYMLINK, 0, 0)) == 0) {
+        end_op();
+        return -1;
+    }
+    int length = len(target);
+    writei(newip, 0, (uint64)&length, 0, 4);
+    writei(newip, 0, (uint64)target, 4, length + 1);
+    iunlockput(newip);
+    end_op();
+    return 0;
 }
