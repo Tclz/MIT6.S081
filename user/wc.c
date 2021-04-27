@@ -2,6 +2,7 @@
 #include "kernel/stat.h"
 #include "user/user.h"
 
+//wc命令用于计算字数。
 char buf[512];
 
 void
@@ -36,12 +37,12 @@ int
 main(int argc, char *argv[])
 {
   int fd, i;
-
+  //一个参数的话 从标准输入中统计
   if(argc <= 1){
     wc(0, "");
     exit(0);
   }
-
+  //从参数中指定的文件中统计
   for(i = 1; i < argc; i++){
     if((fd = open(argv[i], 0)) < 0){
       printf("wc: cannot open %s\n", argv[i]);

@@ -3,6 +3,7 @@
 #include "user/user.h"
 #include "kernel/fs.h"
 
+//格式化文件名
 char*
 fmtname(char *path)
 {
@@ -44,6 +45,7 @@ ls(char *path)
 
   switch(st.type){
   case T_FILE:
+      //如果是文件类型 就把相应的信息打印
     printf("%s %d %d %l\n", fmtname(path), st.type, st.ino, st.size);
     break;
 

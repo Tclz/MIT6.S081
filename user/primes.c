@@ -58,7 +58,7 @@ int main(void)
     {
         numbers[index++] = i;
     }
-    // 堆叠的管道形成一个大的素数筛
+
     while (index > 0)
     {
         // 只要仍有剩余的数就继续创建管道进行筛选
@@ -77,7 +77,9 @@ int main(void)
                 write(fd[WRITEEND], &numbers[i], sizeof(numbers[i]));
             }
             close(fd[WRITEEND]);
+            //阻塞父进程 等待子进程结束
             wait((int *)0);
+            //让父进程退出 子进程继续fork 形成下一道筛
             exit(0);
         }
         else
@@ -99,8 +101,10 @@ int main(void)
                 }
             }
             printf("prime %d\n", prime);
+            // 只要还有素数 子进程就继续fork出进程 将当前未处理的数传给它的子进程
             // fork again until no prime
             close(fd[READEND]);
+            //子进程不退出 还在while循环中
         }
     }
     exit(0);

@@ -15,8 +15,10 @@ int main(int argc, char *argv[]){
         fprintf(2,"Usage:ping-pong a byte between two processes.");
     }
     // two pipes
+    //收发消息两个方向各用一个
     int pfd[2], cfd[2];
     // 创建管端，每个管道如p分别具有读端p[0]和写端p[1]
+    //返回负值表示创建失败
     if(pipe(pfd) < 0 || pipe(cfd) < 0) {
         fprintf(STDDER_FILENO, "create pipe failed.");
         exit(1);
@@ -31,7 +33,7 @@ int main(int argc, char *argv[]){
 
     int pid = fork();
     // 创建好进程后，父子进程同时运行。
-    // fork的三种可能的返回值 0说明在子进程中；新创建的子进程的id；负值创建失败
+    // fork的三种可能的返回值 0说明子进程返回；新创建的子进程的id；负值创建失败
     if(pid < 0) {
         fprintf(STDDER_FILENO,"fork failed.");
         exit(1);
@@ -58,7 +60,6 @@ int main(int argc, char *argv[]){
         read(cfd[READEND], buffer, buffer_size);
         close(cfd[READEND]);
         printf("%d: received %s\n",getpid(),buffer);
-
     }
     exit(0);
 }

@@ -148,6 +148,7 @@ main(void)
   int fd;
 
   // Ensure that three file descriptors are open.
+  //打开0 1 2三个文件描述符
   while((fd = open("console", O_RDWR)) >= 0){
     if(fd >= 3){
       close(fd);

@@ -4,6 +4,7 @@
 
 #include <stdarg.h>
 
+//print函数最终还是调用了write系统调用
 static char digits[] = "0123456789ABCDEF";
 
 static void
