@@ -96,11 +96,13 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
 // add a new syscall
 uint64
 sys_trace(void)
 {
     // 接收用户传递进来的mask
+    // 仿照其他已有的系统调用 从用户输入接收到参数
     int n;
     if(argint(0, &n) < 0)
         return -1;
@@ -120,8 +122,14 @@ sys_sysinfo(void)
     if(argaddr(0, &addr) < 0)
         return -1;
     struct proc* p = myproc();
+    //计算空闲内存
     info.freemem = collect_free_mem();
+    //统计状态不为unused的进程数目
     info.nproc = count_unused_process();
+    //讲内核空间的数据拷贝出来到用户空间
+    //addr是用户空间虚拟地址，指向一个stat结构体
+    //addr is a user virtual address, pointing to a struct stat.
+    //个人理解 将结构体info的信息拷贝到addr指向的内存区域
     if(copyout(p->pagetable,addr,(char *)& info, sizeof(info)) < 0)
         return -1;
     return 0;

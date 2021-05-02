@@ -87,22 +87,22 @@ struct proc {
   struct spinlock lock;
 
   // p->lock must be held when using these:
-  enum procstate state;        // Process state
-  struct proc *parent;         // Parent process
-  void *chan;                  // If non-zero, sleeping on chan
-  int killed;                  // If non-zero, have been killed
-  int xstate;                  // Exit status to be returned to parent's wait
-  int pid;                     // Process ID
+  enum procstate state;        // Process state  //进程状态
+  struct proc *parent;         // Parent process  //当前进程的父进程
+  void *chan;                  // If non-zero, sleeping on chan  //非0的话 表示当前进程处于sleep状态
+  int killed;                  // If non-zero, have been killed  //当前进程是否被kill。非0表示killed
+  int xstate;                  // Exit status to be returned to parent's wait  //进程退出时要返回给父进程wait函数的值
+  int pid;                     // Process ID  //进程ID
 
   // these are private to the process, so p->lock need not be held.
-  uint64 kstack;               // Virtual address of kernel stack
-  uint64 sz;                   // Size of process memory (bytes)
-  pagetable_t pagetable;       // User page table
-  struct trapframe *trapframe; // data page for trampoline.S
-  struct context context;      // swtch() here to run process
-  struct file *ofile[NOFILE];  // Open files
-  struct inode *cwd;           // Current directory
-  char name[16];               // Process name (debugging)
+  uint64 kstack;               // Virtual address of kernel stack  //内核栈的虚拟地址
+  uint64 sz;                   // Size of process memory (bytes)   //进程使用的内存大小
+  pagetable_t pagetable;       // User page table        //用户页表
+  struct trapframe *trapframe; // data page for trampoline.S       //中断帧页
+  struct context context;      // swtch() here to run process      //上下文切换时要保存的内容
+  struct file *ofile[NOFILE];  // Open files         //进程打开的文件描述符
+  struct inode *cwd;           // Current directory      //当前所处的目录
+  char name[16];               // Process name (debugging)  //进程名字 用于调试
 
   int mask;                    // trace mask
 };
