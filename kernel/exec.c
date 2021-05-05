@@ -22,7 +22,7 @@ exec(char *path, char **argv)
   struct proc *p = myproc();
 
   begin_op();
-
+    //使用namei打开二进制文件路径
   if((ip = namei(path)) == 0){
     end_op();
     return -1;
@@ -30,15 +30,17 @@ exec(char *path, char **argv)
   ilock(ip);
 
   // Check ELF header
+  //检查ELF文件头的魔数 判断该可执行文件类型是否正确
   if(readi(ip, 0, (uint64)&elf, 0, sizeof(elf)) != sizeof(elf))
     goto bad;
   if(elf.magic != ELF_MAGIC)
     goto bad;
-
+    //分配一个未使用的页表
   if((pagetable = proc_pagetable(p)) == 0)
     goto bad;
 
   // Load program into memory.
+  //载入可执行文件到内存
   for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
     if(readi(ip, 0, (uint64)&ph, off, sizeof(ph)) != sizeof(ph))
       goto bad;
@@ -49,11 +51,13 @@ exec(char *path, char **argv)
     if(ph.vaddr + ph.memsz < ph.vaddr)
       goto bad;
     uint64 sz1;
+    //给每一个ELF段分配内存
     if((sz1 = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz)) == 0)
       goto bad;
     sz = sz1;
     if(ph.vaddr % PGSIZE != 0)
       goto bad;
+    //将每个elf段加载到内存中
     if(loadseg(pagetable, ph.vaddr, ip, ph.off, ph.filesz) < 0)
       goto bad;
   }
@@ -66,6 +70,8 @@ exec(char *path, char **argv)
 
   // Allocate two pages at the next page boundary.
   // Use the second as the user stack.
+  //再分配两个物理页
+  //其中一个作为用户栈 另一个用作guard page
   sz = PGROUNDUP(sz);
   uint64 sz1;
   if((sz1 = uvmalloc(pagetable, sz, sz + 2*PGSIZE)) == 0)
@@ -78,6 +84,7 @@ exec(char *path, char **argv)
   // 复制
   u2kvmcopy(pagetable, p->kernelpt, 0, sz);
 
+  //exec要接收的用户参数
   // Push argument strings, prepare rest of stack in ustack.
   for(argc = 0; argv[argc]; argc++) {
     if(argc >= MAXARG)
@@ -112,13 +119,17 @@ exec(char *path, char **argv)
   safestrcpy(p->name, last, sizeof(p->name));
     
   // Commit to the user image.
+  //准备新的内存映像完成 提交到新的页表
   oldpagetable = p->pagetable;
   p->pagetable = pagetable;
   p->sz = sz;
+  //PC设置成可执行程序的入口 即main函数
   p->trapframe->epc = elf.entry;  // initial program counter = main
   p->trapframe->sp = sp; // initial stack pointer
+  //释放旧的内存映像
   proc_freepagetable(oldpagetable, oldsz);
 
+  //进程号pid等于1时才打印 lab3
   if (p->pid == 1) vmprint(p->pagetable);
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 

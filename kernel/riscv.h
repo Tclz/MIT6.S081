@@ -333,10 +333,11 @@ sfence_vma()
 #define PTE_U (1L << 4) // 1 -> user can access
 
 // shift a physical address to the right place for a PTE.
+//物理地址转为pte(去掉低12位偏移量 再整体左移10位 一般用于分配物理页后将该块的地址填入pte中)
 #define PA2PTE(pa) ((((uint64)pa) >> 12) << 10)
-
+//pte转(对齐的)物理地址
 #define PTE2PA(pte) (((pte) >> 10) << 12)
-
+//取最低10位标志位
 #define PTE_FLAGS(pte) ((pte) & 0x3FF)
 
 // extract the three 9-bit page table indices from a virtual address.

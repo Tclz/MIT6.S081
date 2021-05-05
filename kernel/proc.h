@@ -98,7 +98,7 @@ struct proc {
   uint64 kstack;               // Virtual address of kernel stack
   uint64 sz;                   // Size of process memory (bytes)
   pagetable_t pagetable;       // User page table
-  pagetable_t kernelpt;        // 内核映射表
+  pagetable_t kernelpt;        // 让每个进程都有一份属于自己的内核页表
   struct trapframe *trapframe; // data page for trampoline.S
   struct context context;      // swtch() here to run process
   struct file *ofile[NOFILE];  // Open files
