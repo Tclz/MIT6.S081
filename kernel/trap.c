@@ -33,6 +33,7 @@ trapinithart(void)
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
 //
+//trap来自用户空间 由此函数处理
 void
 usertrap(void)
 {
@@ -43,31 +44,42 @@ usertrap(void)
 
   // send interrupts and exceptions to kerneltrap(),
   // since we're now in the kernel.
+  //在内核中执行任何操作之前 先将stvec指向了kernelvec变量 这是内核空间trap处理代码的位置
   w_stvec((uint64)kernelvec);
 
   struct proc *p = myproc();
   
   // save user program counter.
+  //保存pc 存在这么一种情况：当程序还在内核中执行时，因为进程调度切换到另一个进程执行，然后该进程可能通过系统调用进而导致SEPC寄存器的内容被覆盖
   p->trapframe->epc = r_sepc();
-  
+  //SCAUSE寄存器中保存了此次trap的原因
+  //值为8 代表系统调用
   if(r_scause() == 8){
     // system call
 
+    //判断进程是否还存活 killed状态的进程无需trap处理
     if(p->killed)
       exit(-1);
 
     // sepc points to the ecall instruction,
     // but we want to return to the next instruction.
+    //修改pc 使得从内核空间返回到用户空间时 可以顺利执行ecall指令的下一条指令
     p->trapframe->epc += 4;
 
     // an interrupt will change sstatus &c registers,
     // so don't enable until done with those registers.
+    //保存完各类寄存器之后 可以开中断
     intr_on();
-
+    //根据系统调用号执行具体的处理函数
     syscall();
   } else if((which_dev = devintr()) != 0){
+      //设备中断
+      //2代表定时器中断
+      //1代表其他中断类型 （键盘、磁盘等外设）
+      //0 未识别的中断类型 出错
     // ok
   } else {
+      //否则的话 对于来自用户空间的异常 xv6处理的方式很统一：杀死该异常的用户进程
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;
@@ -77,6 +89,7 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
+  // 定时器中断
   if(which_dev == 2)
   {
       p->total_ticks += 1;
@@ -122,7 +135,6 @@ usertrap(void)
 
               // PC的值改为alarm处理函数的地址
               p->trapframe->epc = (uint64)p->handler;
-
               p->total_ticks = 0;
           }else{
               p->total_ticks -= 1;
@@ -130,14 +142,13 @@ usertrap(void)
       }
       yield();
   }
-
-
   usertrapret();
 }
 
 //
 // return to user space
 //
+//在返回用户空间之前 需要这个函数做一些收尾的工作
 void
 usertrapret(void)
 {
@@ -146,6 +157,7 @@ usertrapret(void)
   // we're about to switch the destination of traps from
   // kerneltrap() to usertrap(), so turn off interrupts until
   // we're back in user space, where usertrap() is correct.
+  //关中断 (在trampoline.S中恢复寄存器之后sret指令将重新开中断)
   intr_off();
 
   // send syscalls, interrupts, and exceptions to trampoline.S
@@ -153,6 +165,8 @@ usertrapret(void)
 
   // set up trapframe values that uservec will need when
   // the process next re-enters the kernel.
+  //在用户进程的trapframe页预先保存一些变量
+  //下次再进入到内核空间中时能用得到
   p->trapframe->kernel_satp = r_satp();         // kernel page table
   p->trapframe->kernel_sp = p->kstack + PGSIZE; // process's kernel stack
   p->trapframe->kernel_trap = (uint64)usertrap;
@@ -182,6 +196,7 @@ usertrapret(void)
 
 // interrupts and exceptions from kernel code go here via kernelvec,
 // on whatever the current kernel stack is.
+//如果trap来自内核空间 将由这个函数处理
 void 
 kerneltrap()
 {
@@ -225,6 +240,8 @@ clockintr()
 // returns 2 if timer interrupt,
 // 1 if other device,
 // 0 if not recognized.
+//中断可以被分为内部中断和外部中断，内部中断的来源来自CPU内部（软件中断指令，溢出，除法错误等，例如操作系统从用户态切换到内核态需借助CPU内部的软件中断），
+// 外部中断的中断源来自CPU外部，由外设提出请求
 int
 devintr()
 {

@@ -108,6 +108,7 @@ sys_sigalarm()
         return -1;
     if(argaddr(1, &handler) < 0)
         return -1;
+    //系统调用只是让进程携带上某些参数值?
     p->alarm_interval = interval;
     p->handler = (void(*)())handler;
     return 0;
@@ -115,7 +116,7 @@ sys_sigalarm()
 uint64
 sys_sigreturn(void)
 {
-    // 在sys_sigalarm结束之后调用
+    // 在periodic周期函数结束之后调用 详见alarmtest.c
     // 恢复各寄存器
     struct proc* p = myproc();
     p->trapframe->epc = p->his_epc;
