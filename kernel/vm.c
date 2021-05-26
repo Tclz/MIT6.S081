@@ -184,8 +184,10 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 //      panic("uvmunmap: walk");
           continue;
     if((*pte & PTE_V) == 0){
+        //lazy allocated but not used address, ignore it
         *pte =  0;
         continue;
+
 //        panic("uvmunmap: not mapped");
     }
 

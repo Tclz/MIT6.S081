@@ -75,42 +75,48 @@ usertrap(void)
       {
 //          printf("check whether the page fault occurs: r_scause() is %d\n",r_scause());
           // the virtual address where occurs page fault.
+          //出现page fault的虚拟内存地址
           uint64 va = r_stval();
           //Kill a process if it page-faults on a virtual memory address higher than any allocated with sbrk().
+          //如果va大于分配给该进程的堆内存
+          //说明该进程正在访问不属于自己的地址空间。出错
           if(va >= p->sz){
               printf("usertrap: invalid virtual address\n");
               p->killed = 1;
               goto end;
           }
-
+          //查看用户进程内存布局可知 va也不能小于栈内存地址
           // Kill a process if it page-faults on the invalid page below the user stack.
           if (va <= PGROUNDDOWN(p->trapframe->sp))
           {
               printf("usertrap: guard page\n");
-              p->killed = 1;
+//              p->killed = 1;
               goto end;
           }
 
+          //发生page fault的虚拟内存地址向下取整
           va = PGROUNDDOWN(va);
           char* mem = kalloc();
 
+          //分配内存失败
           // out of memory, kill the process
           if(mem == 0){
 //              uvmdealloc(pagetable, a, oldsz);
 //              return 0;
                 printf("usertrap: out of memory\n");
-                p->killed = 1;
+//                p->killed = 1;
                 goto end;
           }
 
           memset(mem, 0, PGSIZE);
           //mappings
+          //在分配了物理页之后，将虚拟地址到物理地址的映射关系添加到页表中
           if(mappages(p->pagetable, va, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
               printf("usertrap: mappages falied\n");
               kfree(mem);
 //              uvmdealloc(pagetable, a, oldsz);
 //              return 0;
-              p->killed = 1;
+//              p->killed = 1;
               goto end;
           }
 
