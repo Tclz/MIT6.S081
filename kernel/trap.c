@@ -109,12 +109,16 @@ cow_alloc(pagetable_t pagetable, uint64 va)
     pa = PTE2PA(*pte);
     if(pa==0) return -1;
     flags = PTE_FLAGS(*pte);
+    //检查这个pte是否是cow fork的
     if(flags & PTE_COW)
     {
+        //分配物理页
         char *ka = kalloc();
         if (ka == 0) return -1;
+        //旧页的内容拷贝到新页
         memmove(ka, (char*)pa, PGSIZE);
         kfree((void*)pa);
+        //flag重新标为可写
         flags = (flags & ~PTE_COW) | PTE_W;
         *pte = PA2PTE((uint64)ka) | flags;
         return 0;

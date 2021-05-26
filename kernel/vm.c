@@ -326,12 +326,15 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 //    if((mem = kalloc()) == 0)
 //      goto err;
 //    memmove(mem, (char*)pa, PGSIZE);
+
 // clear PTE_W and mark the page as cow page.
     if(flags & PTE_W)
     {
         flags = (flags | PTE_COW) & (~PTE_W);
         *pte = PA2PTE(pa) | flags;
     }
+    //cow fork会使得一个物理页被父子进程都引用
+    //维持该物理页的引用计数
     increase_rc((void*)pa);
     if(mappages(new, i, PGSIZE, pa, flags) != 0){
 //      kfree(mem);

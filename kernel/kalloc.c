@@ -26,6 +26,7 @@ struct {
 } kmem;
 
 // modified.
+//新增一个结构体用于对每个物理页的引用进行计数
 struct {
     struct spinlock lock;
     int count[PGROUNDUP(PHYSTOP) / PGSIZE];
@@ -132,6 +133,7 @@ kalloc(void)
   if(r){
       memset((char*)r, 5, PGSIZE); // fill with junk
       // add some thing here.
+      //增加引用计数
       increase_rc((void*)r);
   }
 
