@@ -59,6 +59,7 @@ thread_schedule(void)
   next_thread = 0;
   t = current_thread + 1;
   for(int i = 0; i < MAX_THREAD; i++){
+      //下标超出范围了再从头找
     if(t >= all_thread + MAX_THREAD)
       t = all_thread;
     if(t->state == RUNNABLE) {
@@ -96,6 +97,7 @@ thread_create(void (*func)())
   }
   t->state = RUNNABLE;
   // YOUR CODE HERE
+  //返回地址 设置成该线程运行后起来要跑的函数
   t->context.ra = (uint64)func;
   t->context.sp = (uint64)t->stack + STACK_SIZE;
 }

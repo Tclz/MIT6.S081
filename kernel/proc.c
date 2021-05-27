@@ -388,6 +388,7 @@ exit(int status)
   release(&original_parent->lock);
 
   // Jump into the scheduler, never to return.
+  //一个进程先获取自己的锁，然后调用switch函数切换到调度器线程，调度器线程再释放进程锁
   sched();
   panic("zombie exit");
 }
@@ -586,6 +587,7 @@ sleep(void *chan, struct spinlock *lk)
 
 // Wake up all processes sleeping on chan.
 // Must be called without any p->lock.
+//将等待在某个条件上的线程全部唤醒
 void
 wakeup(void *chan)
 {
@@ -602,6 +604,7 @@ wakeup(void *chan)
 
 // Wake up p if it is sleeping in wait(); used by exit().
 // Caller must hold p->lock.
+//唤醒指定线程
 static void
 wakeup1(struct proc *p)
 {
