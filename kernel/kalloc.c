@@ -19,6 +19,7 @@ struct run {
 };
 
 //wmy
+//每个CPU都维护自己的空闲分区链表以减少锁争用
 struct {
   struct spinlock lock;
   struct run *freelist;
@@ -66,6 +67,7 @@ kfree(void *pa)
   int hart = cpuid();
   pop_off();
 
+  //将释放出来的物理页加到自身的空闲分区链上
   acquire(&kmem[hart].lock);
   r->next = kmem[hart].freelist;
   kmem[hart].freelist = r;
@@ -83,12 +85,13 @@ kalloc(void) {
     int hart = cpuid();
     pop_off();
 
+    //每个cpu core先在自己维护的空闲分区上分配物理页
     acquire(&kmem[hart].lock);
     r = kmem[hart].freelist;
     if (r)
         kmem[hart].freelist = r->next;
     release(&kmem[hart].lock);
-
+    //如果分配失败 再使用其他core的空闲页
     if (!r) {
         for (int i = 0; i < NCPU; i++) {
             if (i == hart)
