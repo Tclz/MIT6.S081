@@ -24,9 +24,9 @@ struct superblock {
 
 #define FSMAGIC 0x10203040
 
-#define NDIRECT 11
-#define NINDIRECT (BSIZE / sizeof(uint))
-#define MAXFILE (NDIRECT + NINDIRECT + NINDIRECT * NINDIRECT)
+#define NDIRECT 11  //11个直接块
+#define NINDIRECT (BSIZE / sizeof(uint))  //1个singly-indirect block==>指向256个直接块
+#define MAXFILE (NDIRECT + NINDIRECT + NINDIRECT * NINDIRECT) //加了1个doubly-indirect block后能支持的最大文件大小
 
 // On-disk inode structure
 struct dinode {
@@ -35,24 +35,26 @@ struct dinode {
   short minor;          // Minor device number (T_DEVICE only)
   short nlink;          // Number of links to inode in file system
   uint size;            // Size of file (bytes)
-  uint addrs[NDIRECT+2];   // Data block addresses
+  uint addrs[NDIRECT+2];   // Data block addresses  //指向的数据块的地址
 };
 
-// Inodes per block.
+// Inodes per block. // 每个block有多少inodes
 #define IPB           (BSIZE / sizeof(struct dinode))
 
-// Block containing inode i
+// Block containing inode i //确定给定的inode号在哪个block
 #define IBLOCK(i, sb)     ((i) / IPB + sb.inodestart)
 
-// Bitmap bits per block
+// Bitmap bits per block  //每个block能装下多少bitmap的bit位数
 #define BPB           (BSIZE*8)
 
-// Block of free map containing bit for block b
+// Block of free map containing bit for block b // 给定bit序号确定在哪个bitmap block
 #define BBLOCK(b, sb) ((b)/BPB + sb.bmapstart)
 
 // Directory is a file containing a sequence of dirent structures.
 #define DIRSIZ 14
 
+//目录是一种inode类型为T_DIR的文件。该种文件包含的数据是由各个目录项构成的一个序列。
+//每个目录项是一个dirent结构体(内部有一个名称和inode号,名称最多包含14个字符)
 struct dirent {
   ushort inum;
   char name[DIRSIZ];

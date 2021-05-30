@@ -374,19 +374,20 @@ iunlockput(struct inode *ip)
 
 // Return the disk block address of the nth block in inode ip.
 // If there is no such block, bmap allocates one.
+//在磁盘上查找文件的给定逻辑块号为bn的数据块(如果没有这个块就分配一个)
 static uint
 bmap(struct inode *ip, uint bn)
 {
   uint addr, *a;
   struct buf *bp;
-
+  //块号bn指代直接块 最多11块
   if(bn < NDIRECT){
     if((addr = ip->addrs[bn]) == 0)
       ip->addrs[bn] = addr = balloc(ip->dev);
     return addr;
   }
   bn -= NDIRECT;
-
+  //一级间接块 指向256块
   if(bn < NINDIRECT){
     // Load indirect block, allocating if necessary.
     if((addr = ip->addrs[NDIRECT]) == 0)
@@ -402,6 +403,7 @@ bmap(struct inode *ip, uint bn)
   }
 
   //wmy
+  //新增的doubly-indirect block 指向256*256块
     bn -= NINDIRECT;
     if (bn < NINDIRECT * NINDIRECT) {
         if((addr = ip->addrs[NDIRECT + 1]) == 0)
@@ -419,6 +421,7 @@ bmap(struct inode *ip, uint bn)
             a[bn % NINDIRECT] = addr = balloc(ip->dev);
             log_write(bp);
         }
+        //Don't forget to brelse() each block that you bread().
         brelse(bp);
         return addr;
     }
@@ -427,6 +430,7 @@ bmap(struct inode *ip, uint bn)
 
 // Truncate inode (discard contents).
 // Caller must hold ip->lock.
+//释放inode 包括直接块、一级间接块和二级间接块
 void
 itrunc(struct inode *ip)
 {

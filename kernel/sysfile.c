@@ -116,6 +116,7 @@ sys_fstat(void)
 }
 
 // Create the path new as a link to the same inode as old.
+//创建硬链接(相当于给文件起别名，指向同一个inode)
 uint64
 sys_link(void)
 {
@@ -132,6 +133,7 @@ sys_link(void)
   }
 
   ilock(ip);
+  //不能给目录文件创建硬链接
   if(ip->type == T_DIR){
     iunlockput(ip);
     end_op();
@@ -322,10 +324,16 @@ sys_open(void)
     return -1;
   }
 
-  //wmy
+    //修改open系统调用使其支持打开软链接文件
+    //其他系统调用(例如，link和unlink)无需follow软链接文件的指向，这些系统调用操作软链接文件自身即可。
+    //wmy
     int cnt = 0, length;
     char next[MAXPATH + 1];
+    //OR 得到操作该文件的flags
+    //如果有O_NOFOLLOW标识 则要求open打开软链接所指向的目标文件
     if (!(omode & O_NOFOLLOW)) {
+        //软链接可以继续指向软链接
+        //此处允许的最大递归深度不超过10
         for (; cnt < 10 && ip->type == T_SYMLINK; cnt ++) {
             readi(ip, 0, (uint64)&length, 0, 4);
             readi(ip, 0, (uint64)next, 4, length);
@@ -525,12 +533,18 @@ sys_symlink(void) {
     }
     struct inode *newip;
     begin_op();
+    //调用create系统调用来创建软链接文件 指定文件类型是T_SYMLINK
     if((newip = create(path, T_SYMLINK, 0, 0)) == 0) {
         end_op();
         return -1;
     }
+    //将指向的目标文件路径写入到软链接的文件内容
     int length = len(target);
+    //writei(struct inode *ip, int user_src, uint64 src, uint off, uint n)
+    //user_src==1, then src is a user virtual address; otherwise, src is a kernel address.
+    //先将该软链接指向的文件名的长度(4个字节的整型表示)写到inode
     writei(newip, 0, (uint64)&length, 0, 4);
+    //再将该文件名写到inode
     writei(newip, 0, (uint64)target, 4, length + 1);
     iunlockput(newip);
     end_op();
