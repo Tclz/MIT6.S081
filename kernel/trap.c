@@ -6,6 +6,18 @@
 #include "proc.h"
 #include "defs.h"
 
+struct file {
+  enum { FD_NONE, FD_PIPE, FD_INODE, FD_DEVICE } type;
+  int ref; // reference count
+  char readable;
+  char writable;
+  struct pipe *pipe; // FD_PIPE
+  struct inode *ip;  // FD_INODE and FD_DEVICE
+  uint off;          // FD_INODE and FD_DEVICE
+  short major;       // FD_DEVICE
+  short minor;       // FD_DEVICE
+};
+
 struct spinlock tickslock;
 uint ticks;
 
@@ -15,6 +27,9 @@ extern char trampoline[], uservec[], userret[];
 void kernelvec();
 
 extern int devintr();
+
+static const char *
+scause_desc(uint64 stval);
 
 void
 trapinit(void)
@@ -48,7 +63,7 @@ usertrap(void)
   struct proc *p = myproc();
   
   // save user program counter.
-  p->trapframe->epc = r_sepc();
+  p->tf->epc = r_sepc();
   
   if(r_scause() == 8){
     // system call
@@ -58,42 +73,77 @@ usertrap(void)
 
     // sepc points to the ecall instruction,
     // but we want to return to the next instruction.
-    p->trapframe->epc += 4;
+    p->tf->epc += 4;
 
     // an interrupt will change sstatus &c registers,
     // so don't enable until done with those registers.
     intr_on();
-    
-    int num = p->trapframe->a7, valid = 0;
-    uint64 va;
-    if(num == 16 || num == 4 || num == 5) {
-      if(num == 16 || num == 5) { // sys_write sys_read
-        argaddr(1, &va);
-      } else if (num == 4) { // sys_pipe
-        argaddr(0, &va);
-      }
-      if(walkaddr(p->pagetable, va) == 0) {
-        lazyalloc(PGROUNDDOWN(va));
-      }
-    }
-    if(valid == -1) {
-      p->trapframe->a0 = -1;
-    } else {
-      syscall();
-    } 
+
+    syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else if(r_scause() == 13 || r_scause() == 15) {
-    // page fault
-    if(lazyalloc(PGROUNDDOWN(r_stval())) == -1) {
+  } else {
+    if(r_scause() == 13 || r_scause() == 15){
+      
+      /**
+       * Implement Lazy allocation for mmap 
+       * 
+       * REASON: That is, mmap should not allocate physical memory or read the file
+       * */
+      struct proc* p = myproc();
+      uint64 va = PGROUNDDOWN(r_stval());
+//      printf("MAXVA: %p, va: %p, current_max: %p\n",MAXVA, va, p->current_maxva);
+      /** 找到虚拟地址对应的vma  */
+      struct VMA* vma = 0; /* = &p->vmas[p->current_ivma]; */ 
+      for (int i = NVMA; i >= 0; i--)
+      {
+        if(p->vmas[i].vm_start <= va && va <= p->vmas[i].vm_end){
+          vma = &p->vmas[i];
+          break;
+        }
+      }
+      if(vma == 0){
+        printf("usertrap(): not find vma \n");
+        p->killed = 1;
+        goto end;
+      }
+      if(va > vma->vm_end){
+        printf("usertrap(): va is greater than vm_end \n");
+        p->killed = 1;
+        goto end;
+      }
+      /** 内存向上增长  */
+      char* mem = (char *)kalloc();
+      if(mem == 0){
+        printf("usertrap(): no mem left\n");
+        p->killed = 1;
+        goto end;
+      }
+//      printf("walk va %p result : %d \n",va, walkaddr(p->pagetable, va));
+      memset(mem, 0, PGSIZE);
+      /** Don't forget to set the permissions correctly on the page  */
+      if(mappages(p->pagetable, va, PGSIZE, (uint64)mem, vma->vm_prot|PTE_U|PTE_X) < 0){
+        printf("usertrap(): cannot map\n");
+        kfree(mem);
+        p->killed = 1;
+        goto end;
+      }
+      /** 利用readi将文件内容映射到虚拟地址上，映射的文件开始地址偏移为 va - vma->vm_start  */
+      struct file* f = vma->vm_file;
+      int offset = va - vma->vm_start;
+
+      ilock(f->ip);
+      readi(f->ip, 1, va, offset, PGSIZE);
+      iunlock(f->ip);
+    }
+    else
+    {
+      printf("usertrap(): unexpected scause %p (%s) pid=%d\n", r_scause(), scause_desc(r_scause()), p->pid);
+      printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
       p->killed = 1;
     }
-  } else {
-    printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
-    printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
-    p->killed = 1;
   }
-
+end:
   if(p->killed)
     exit(-1);
 
@@ -112,9 +162,8 @@ usertrapret(void)
 {
   struct proc *p = myproc();
 
-  // we're about to switch the destination of traps from
-  // kerneltrap() to usertrap(), so turn off interrupts until
-  // we're back in user space, where usertrap() is correct.
+  // turn off interrupts, since we're switching
+  // now from kerneltrap() to usertrap().
   intr_off();
 
   // send syscalls, interrupts, and exceptions to trampoline.S
@@ -122,10 +171,10 @@ usertrapret(void)
 
   // set up trapframe values that uservec will need when
   // the process next re-enters the kernel.
-  p->trapframe->kernel_satp = r_satp();         // kernel page table
-  p->trapframe->kernel_sp = p->kstack + PGSIZE; // process's kernel stack
-  p->trapframe->kernel_trap = (uint64)usertrap;
-  p->trapframe->kernel_hartid = r_tp();         // hartid for cpuid()
+  p->tf->kernel_satp = r_satp();         // kernel page table
+  p->tf->kernel_sp = p->kstack + PGSIZE; // process's kernel stack
+  p->tf->kernel_trap = (uint64)usertrap;
+  p->tf->kernel_hartid = r_tp();         // hartid for cpuid()
 
   // set up the registers that trampoline.S's sret will use
   // to get to user space.
@@ -137,7 +186,7 @@ usertrapret(void)
   w_sstatus(x);
 
   // set S Exception Program Counter to the saved user pc.
-  w_sepc(p->trapframe->epc);
+  w_sepc(p->tf->epc);
 
   // tell trampoline.S the user page table to switch to.
   uint64 satp = MAKE_SATP(p->pagetable);
@@ -165,7 +214,7 @@ kerneltrap()
     panic("kerneltrap: interrupts enabled");
 
   if((which_dev = devintr()) == 0){
-    printf("scause %p\n", scause);
+    printf("scause %p (%s)\n", scause, scause_desc(scause));
     printf("sepc=%p stval=%p\n", r_sepc(), r_stval());
     panic("kerneltrap");
   }
@@ -208,15 +257,13 @@ devintr()
 
     if(irq == UART0_IRQ){
       uartintr();
-    } else if(irq == VIRTIO0_IRQ){
-      virtio_disk_intr();
-    } else if(irq){
-      printf("unexpected interrupt irq=%d\n", irq);
+    } else if(irq == VIRTIO0_IRQ || irq == VIRTIO1_IRQ ){
+      virtio_disk_intr(irq - VIRTIO0_IRQ);
+    } else {
+      // the PLIC sends each device interrupt to every core,
+      // which generates a lot of interrupts with irq==0.
     }
 
-    // the PLIC allows each device to raise at most one
-    // interrupt at a time; tell the PLIC the device is
-    // now allowed to interrupt again.
     if(irq)
       plic_complete(irq);
 
@@ -239,22 +286,66 @@ devintr()
   }
 }
 
-int 
-lazyalloc(uint64 vm)
+static const char *
+scause_desc(uint64 stval)
 {
-  struct proc *p = myproc();
-  pagetable_t pagetable = p->pagetable;
-  char* mem;
-  uint64 sp = p->trapframe->sp;
-  if(vm > p->sz || (vm < sp) || (mem = kalloc()) == 0) {
-    return -1;
+  static const char *intr_desc[16] = {
+    [0] "user software interrupt",
+    [1] "supervisor software interrupt",
+    [2] "<reserved for future standard use>",
+    [3] "<reserved for future standard use>",
+    [4] "user timer interrupt",
+    [5] "supervisor timer interrupt",
+    [6] "<reserved for future standard use>",
+    [7] "<reserved for future standard use>",
+    [8] "user external interrupt",
+    [9] "supervisor external interrupt",
+    [10] "<reserved for future standard use>",
+    [11] "<reserved for future standard use>",
+    [12] "<reserved for future standard use>",
+    [13] "<reserved for future standard use>",
+    [14] "<reserved for future standard use>",
+    [15] "<reserved for future standard use>",
+  };
+  static const char *nointr_desc[16] = {
+    [0] "instruction address misaligned",
+    [1] "instruction access fault",
+    [2] "illegal instruction",
+    [3] "breakpoint",
+    [4] "load address misaligned",
+    [5] "load access fault",
+    [6] "store/AMO address misaligned",
+    [7] "store/AMO access fault",
+    [8] "environment call from U-mode",
+    [9] "environment call from S-mode",
+    [10] "<reserved for future standard use>",
+    [11] "<reserved for future standard use>",
+    [12] "instruction page fault",
+    [13] "load page fault",
+    [14] "<reserved for future standard use>",
+    [15] "store/AMO page fault",
+  };
+  uint64 interrupt = stval & 0x8000000000000000L;
+  uint64 code = stval & ~0x8000000000000000L;
+  if (interrupt) {
+    if (code < NELEM(intr_desc)) {
+      return intr_desc[code];
+    } else {
+      return "<reserved for platform use>";
+    }
   } else {
-    memset(mem, 0, PGSIZE);
-    if(mappages(pagetable, vm, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0) {
-      kfree(mem);
-      return -1;
+    if (code < NELEM(nointr_desc)) {
+      return nointr_desc[code];
+    } else if (code <= 23) {
+      return "<reserved for future standard use>";
+    } else if (code <= 31) {
+      return "<reserved for custom use>";
+    } else if (code <= 47) {
+      return "<reserved for future standard use>";
+    } else if (code <= 63) {
+      return "<reserved for custom use>";
+    } else {
+      return "<reserved for future standard use>";
     }
   }
-  return 0;
 }
-

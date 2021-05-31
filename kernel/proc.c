@@ -3,6 +3,9 @@
 #include "memlayout.h"
 #include "riscv.h"
 #include "spinlock.h"
+#include "sleeplock.h"
+#include "fs.h"
+#include "file.h"
 #include "proc.h"
 #include "defs.h"
 
@@ -17,28 +20,9 @@ struct spinlock pid_lock;
 
 extern void forkret(void);
 static void wakeup1(struct proc *chan);
-static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
 
-
-// Allocate a page for each process's kernel stack.
-// Map it high in memory, followed by an invalid
-// guard page.
-void
-proc_mapstacks(pagetable_t kpgtbl) {
-  struct proc *p;
-  
-  for(p = proc; p < &proc[NPROC]; p++) {
-    char *pa = kalloc();
-    if(pa == 0)
-      panic("kalloc");
-    uint64 va = KSTACK((int) (p - proc));
-    kvmmap(kpgtbl, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
-  }
-}
-
-// initialize the proc table at boot time.
 void
 procinit(void)
 {
@@ -47,8 +31,18 @@ procinit(void)
   initlock(&pid_lock, "nextpid");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
-      p->kstack = KSTACK((int) (p - proc));
+
+      // Allocate a page for the process's kernel stack.
+      // Map it high in memory, followed by an invalid
+      // guard page.
+      char *pa = kalloc();
+      if(pa == 0)
+        panic("kalloc");
+      uint64 va = KSTACK((int) (p - proc));
+      kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+      p->kstack = va;
   }
+  kvminithart();
 }
 
 // Must be called with interrupts disabled,
@@ -95,7 +89,7 @@ allocpid() {
 // Look in the process table for an UNUSED proc.
 // If found, initialize state required to run in the kernel,
 // and return with p->lock held.
-// If there are no free procs, or a memory allocation fails, return 0.
+// If there are no free procs, return 0.
 static struct proc*
 allocproc(void)
 {
@@ -115,25 +109,29 @@ found:
   p->pid = allocpid();
 
   // Allocate a trapframe page.
-  if((p->trapframe = (struct trapframe *)kalloc()) == 0){
+  if((p->tf = (struct trapframe *)kalloc()) == 0){
     release(&p->lock);
     return 0;
   }
 
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
-  if(p->pagetable == 0){
-    freeproc(p);
-    release(&p->lock);
-    return 0;
-  }
 
   // Set up new context to start executing at forkret,
   // which returns to user space.
-  memset(&p->context, 0, sizeof(p->context));
+  memset(&p->context, 0, sizeof p->context);
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  /** Implementation of MMAP  */
+  //printf("hello here\n");
+  for (int i = NVMA - 1; i >= 0; i--)
+  {
+    p->vmas[i].vm_valid = 1;
+  }
+  //printf("hello there\n");
+  //初始化用户进程可以使用的最大虚拟地址
+  p->current_maxva = VMASTART;
   return p;
 }
 
@@ -143,9 +141,9 @@ found:
 static void
 freeproc(struct proc *p)
 {
-  if(p->trapframe)
-    kfree((void*)p->trapframe);
-  p->trapframe = 0;
+  if(p->tf)
+    kfree((void*)p->tf);
+  p->tf = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
@@ -159,8 +157,8 @@ freeproc(struct proc *p)
   p->state = UNUSED;
 }
 
-// Create a user page table for a given process,
-// with no user memory, but with trampoline pages.
+// Create a page table for a given process,
+// with no user pages, but with trampoline pages.
 pagetable_t
 proc_pagetable(struct proc *p)
 {
@@ -168,26 +166,17 @@ proc_pagetable(struct proc *p)
 
   // An empty page table.
   pagetable = uvmcreate();
-  if(pagetable == 0)
-    return 0;
 
   // map the trampoline code (for system call return)
   // at the highest user virtual address.
   // only the supervisor uses it, on the way
   // to/from user space, so not PTE_U.
-  if(mappages(pagetable, TRAMPOLINE, PGSIZE,
-              (uint64)trampoline, PTE_R | PTE_X) < 0){
-    uvmfree(pagetable, 0);
-    return 0;
-  }
+  mappages(pagetable, TRAMPOLINE, PGSIZE,
+           (uint64)trampoline, PTE_R | PTE_X);
 
   // map the trapframe just below TRAMPOLINE, for trampoline.S.
-  if(mappages(pagetable, TRAPFRAME, PGSIZE,
-              (uint64)(p->trapframe), PTE_R | PTE_W) < 0){
-    uvmunmap(pagetable, TRAMPOLINE, 1, 0);
-    uvmfree(pagetable, 0);
-    return 0;
-  }
+  mappages(pagetable, TRAPFRAME, PGSIZE,
+           (uint64)(p->tf), PTE_R | PTE_W);
 
   return pagetable;
 }
@@ -197,21 +186,22 @@ proc_pagetable(struct proc *p)
 void
 proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
-  uvmunmap(pagetable, TRAMPOLINE, 1, 0);
-  uvmunmap(pagetable, TRAPFRAME, 1, 0);
-  uvmfree(pagetable, sz);
+  uvmunmap(pagetable, TRAMPOLINE, PGSIZE, 0);
+  uvmunmap(pagetable, TRAPFRAME, PGSIZE, 0);
+  if(sz > 0)
+    uvmfree(pagetable, sz);
 }
 
 // a user program that calls exec("/init")
 // od -t xC initcode
 uchar initcode[] = {
-  0x17, 0x05, 0x00, 0x00, 0x13, 0x05, 0x45, 0x02,
-  0x97, 0x05, 0x00, 0x00, 0x93, 0x85, 0x35, 0x02,
-  0x93, 0x08, 0x70, 0x00, 0x73, 0x00, 0x00, 0x00,
-  0x93, 0x08, 0x20, 0x00, 0x73, 0x00, 0x00, 0x00,
-  0xef, 0xf0, 0x9f, 0xff, 0x2f, 0x69, 0x6e, 0x69,
-  0x74, 0x00, 0x00, 0x24, 0x00, 0x00, 0x00, 0x00,
-  0x00, 0x00, 0x00, 0x00
+  0x17, 0x05, 0x00, 0x00, 0x13, 0x05, 0x05, 0x02,
+  0x97, 0x05, 0x00, 0x00, 0x93, 0x85, 0x05, 0x02,
+  0x9d, 0x48, 0x73, 0x00, 0x00, 0x00, 0x89, 0x48,
+  0x73, 0x00, 0x00, 0x00, 0xef, 0xf0, 0xbf, 0xff,
+  0x2f, 0x69, 0x6e, 0x69, 0x74, 0x00, 0x00, 0x01,
+  0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00
 };
 
 // Set up first user process.
@@ -229,8 +219,8 @@ userinit(void)
   p->sz = PGSIZE;
 
   // prepare for the very first "return" from kernel to user.
-  p->trapframe->epc = 0;      // user program counter
-  p->trapframe->sp = PGSIZE;  // user stack pointer
+  p->tf->epc = 0;      // user program counter
+  p->tf->sp = PGSIZE;  // user stack pointer
 
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
@@ -284,11 +274,29 @@ fork(void)
 
   np->parent = p;
 
+  /** Modify fork to ensure that the child has the same mapped regions as the parent.  */
+  //修改fork 使得子进程拥有和父进程相同的内存映射块
+  np->current_maxva = p->current_maxva;
+  np->current_imaxvma = p->current_imaxvma;
+  for (int i = NVMA - 1; i >= 0; i--)
+  {
+      //对指向文件的引用计数增加
+    if(p->vmas[i].vm_file)
+      p->vmas[i].vm_file->ref++;
+    np->vmas[i].vm_end = p->vmas[i].vm_end;
+    np->vmas[i].vm_fd = p->vmas[i].vm_fd;
+    np->vmas[i].vm_file = p->vmas[i].vm_file;
+    np->vmas[i].vm_flags = p->vmas[i].vm_flags;
+    np->vmas[i].vm_prot = p->vmas[i].vm_prot;
+    np->vmas[i].vm_start = p->vmas[i].vm_start;
+    np->vmas[i].vm_valid = p->vmas[i].vm_valid;
+  }
+  
   // copy saved user registers.
-  *(np->trapframe) = *(p->trapframe);
+  *(np->tf) = *(p->tf);
 
   // Cause fork to return 0 in the child.
-  np->trapframe->a0 = 0;
+  np->tf->a0 = 0;
 
   // increment reference counts on open file descriptors.
   for(i = 0; i < NOFILE; i++)
@@ -301,7 +309,7 @@ fork(void)
   pid = np->pid;
 
   np->state = RUNNABLE;
-
+  
   release(&np->lock);
 
   return pid;
@@ -352,10 +360,41 @@ exit(int status)
       p->ofile[fd] = 0;
     }
   }
-
-  begin_op();
+  /** 
+   * Unmap all the maped regions  
+   * 从下往上回收
+   * */
+  struct VMA* vma;
+  for (int i = 0; i < NVMA; i++)
+  {
+    if(!p->vmas[i].vm_valid){
+      vma = &p->vmas[i];
+      vma->vm_valid = 1;
+      //总共需要回收的地址空间大小
+      int totsz = vma->vm_end - vma->vm_start;
+      if(walkaddr(p->pagetable, vma->vm_start)){
+          //如果映射的内存块需要写回文件
+        if(vma->vm_flags == MAP_SHARED){
+//          printf("sys_munmap(): write back \n");
+          filewrite(vma->vm_file, vma->vm_start, totsz);
+        }
+        uvmunmap(p->pagetable, vma->vm_start, totsz,1);
+      }
+      //修改起始地址
+      vma->vm_start += totsz;
+      //如果起始地址等于结束地址 说明整个内存映射块被回收了
+      //该被映射的文件的引用数目减1
+      if(vma->vm_start == vma->vm_end){
+        vma->vm_file->ref--;
+      }
+    }
+  }
+  //重置可用的最大虚拟内存地址
+  p->current_maxva = VMASTART;
+  
+  begin_op(ROOTDEV);
   iput(p->cwd);
-  end_op();
+  end_op(ROOTDEV);
   p->cwd = 0;
 
   // we might re-parent a child to init. we can't be precise about
@@ -468,31 +507,39 @@ scheduler(void)
   
   c->proc = 0;
   for(;;){
-    // Avoid deadlock by ensuring that devices can interrupt.
+    // Avoid deadlock by giving devices a chance to interrupt.
     intr_on();
-    
-    int nproc = 0;
+
+    // Run the for loop with interrupts off to avoid
+    // a race between an interrupt and WFI, which would
+    // cause a lost wakeup.
+    intr_off();
+
+    int found = 0;
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
-      if(p->state != UNUSED) {
-        nproc++;
-      }
       if(p->state == RUNNABLE) {
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
-        swtch(&c->context, &p->context);
+        swtch(&c->scheduler, &p->context);
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0;
+
+        found = 1;
       }
+
+      // ensure that release() doesn't enable interrupts.
+      // again to avoid a race between interrupt and WFI.
+      c->intena = 0;
+
       release(&p->lock);
     }
-    if(nproc <= 2) {   // only init and sh exist
-      intr_on();
+    if(found == 0){
       asm volatile("wfi");
     }
   }
@@ -521,7 +568,7 @@ sched(void)
     panic("sched interruptible");
 
   intena = mycpu()->intena;
-  swtch(&p->context, &mycpu()->context);
+  swtch(&p->context, &mycpu()->scheduler);
   mycpu()->intena = intena;
 }
 
@@ -551,7 +598,7 @@ forkret(void)
     // regular process (e.g., because it calls sleep), and thus cannot
     // be run from main().
     first = 0;
-    fsinit(ROOTDEV);
+    fsinit(minor(ROOTDEV));
   }
 
   usertrapret();

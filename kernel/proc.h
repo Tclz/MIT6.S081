@@ -21,7 +21,7 @@ struct context {
 // Per-CPU state.
 struct cpu {
   struct proc *proc;          // The process running on this cpu, or null.
-  struct context context;     // swtch() here to enter scheduler().
+  struct context scheduler;   // swtch() here to enter scheduler().
   int noff;                   // Depth of push_off() nesting.
   int intena;                 // Were interrupts enabled before push_off()?
 };
@@ -82,22 +82,37 @@ struct trapframe {
 
 enum procstate { UNUSED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
-struct vma {
-  uint64 addr;
-  int len;
-  int prot;
-  int flags;
-  int offset;
-  int used;
-  struct file *pf;
+
+/**
+ * 
+ * Define a structure corresponding to the VMA (virtual memory area) described in Lecture 15, 
+ * recording the address, length, permissions, file, etc. for a virtual memory range created by mmap
+ *
+ * RETRIVEFROM:
+ * https://sites.google.com/site/knsathyawiki/example-page/chapter-15-the-process-address-space#TOC-Virtual-Memory-Areas
+ */
+struct VMA
+{
+  /** 说明VMA是否可用，1为可用，0为已被占用  */
+  int vm_valid;
+  /** 该文件映射到虚拟内存的起止位置 **/
+  uint64 vm_start; 
+  uint64 vm_end; 
+  /** Flags  */
+  int vm_flags;
+  /** 页面权限，可写？可读？  */
+  int vm_prot; 
+  /** 指向某个文件  内存映射的是哪个文件*/
+  struct file* vm_file;
+  /** 文件描述符  */
+  int vm_fd;
 };
 
-#define NVMA 16
+
 
 // Per-process state
 struct proc {
   struct spinlock lock;
-  struct vma vma[NVMA];
 
   // p->lock must be held when using these:
   enum procstate state;        // Process state
@@ -110,10 +125,19 @@ struct proc {
   // these are private to the process, so p->lock need not be held.
   uint64 kstack;               // Virtual address of kernel stack
   uint64 sz;                   // Size of process memory (bytes)
-  pagetable_t pagetable;       // User page table
-  struct trapframe *trapframe; // data page for trampoline.S
+  pagetable_t pagetable;       // Page table
+  struct trapframe *tf;        // data page for trampoline.S
   struct context context;      // swtch() here to run process
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
+  /** Implementation of MMAP  */
+  /** VMA管理数组  */
+  struct VMA vmas[NVMA];
+  /** 当前可用的最大的虚拟地址  从上往下*/
+  //让映射的内存从trapframe之下开始向下增长
+  uint64 current_maxva;
+  /** 当前可用的最大虚拟地址对应在vmas中的VMA序号，方便对current_maxva进行内存紧缩 */
+  int current_imaxvma;
 };
