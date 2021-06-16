@@ -22,6 +22,7 @@ static void freeproc(struct proc *p);
 extern char trampoline[]; // trampoline.S
 
 // initialize the proc table at boot time.
+//boot时初始化进程表
 void
 procinit(void)
 {
@@ -34,11 +35,14 @@ procinit(void)
       // Allocate a page for the process's kernel stack.
       // Map it high in memory, followed by an invalid
       // guard page.
+      //给每个进程分配内核栈空间
       char *pa = kalloc();
       if(pa == 0)
         panic("kalloc");
       uint64 va = KSTACK((int) (p - proc));
+      //虚拟地址到物理地址的映射
       kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+      //栈指针
       p->kstack = va;
   }
   kvminithart();
@@ -89,6 +93,7 @@ allocpid() {
 // If found, initialize state required to run in the kernel,
 // and return with p->lock held.
 // If there are no free procs, or a memory allocation fails, return 0.
+//从进程表中分配进程
 static struct proc*
 allocproc(void)
 {
@@ -96,6 +101,7 @@ allocproc(void)
 
   for(p = proc; p < &proc[NPROC]; p++) {
     acquire(&p->lock);
+    //找一个状态是UNUSED的进程
     if(p->state == UNUSED) {
       goto found;
     } else {
@@ -105,15 +111,18 @@ allocproc(void)
   return 0;
 
 found:
+    //给它分配id
   p->pid = allocpid();
 
   // Allocate a trapframe page.
+  //分配trapframe物理页
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     release(&p->lock);
     return 0;
   }
 
   // An empty user page table.
+  //分配一个空页表
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
     freeproc(p);
@@ -124,6 +133,7 @@ found:
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
+  //设置返回地址 才直到从fork回去后从哪里开始执行
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
@@ -208,6 +218,7 @@ uchar initcode[] = {
 };
 
 // Set up first user process.
+//初始化第一个用户进程 init进程——1号进程
 void
 userinit(void)
 {
@@ -568,9 +579,11 @@ sleep(void *chan, struct spinlock *lk)
   }
 
   // Go to sleep.
+  //sleep在哪个通道上 可以认为是等待在这个条件上
   p->chan = chan;
   p->state = SLEEPING;
 
+  //调度权回到内核
   sched();
 
   // Tidy up.
@@ -585,6 +598,7 @@ sleep(void *chan, struct spinlock *lk)
 
 // Wake up all processes sleeping on chan.
 // Must be called without any p->lock.
+//将等待在某通道上的进程都唤醒
 void
 wakeup(void *chan)
 {

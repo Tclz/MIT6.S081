@@ -57,16 +57,21 @@ sys_sleep(void)
 {
   int n;
   uint ticks0;
-
+    //获取传递给sleep系统调用的参数
   if(argint(0, &n) < 0)
     return -1;
+  //获取互斥锁
   acquire(&tickslock);
+  //记录下调用时刻的系统时钟
   ticks0 = ticks;
+  //如果sleep的时间没够 继续sleep
   while(ticks - ticks0 < n){
+      //如果进程被kill
     if(myproc()->killed){
       release(&tickslock);
       return -1;
     }
+    //需要channel 以及锁
     sleep(&ticks, &tickslock);
   }
   release(&tickslock);

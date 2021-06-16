@@ -97,6 +97,7 @@ int main(void)
                 if (index < 0) prime = temp, index ++;
                 else
                 {
+                    //第一个数的倍数全部被滤掉
                     if (temp % prime != 0) numbers[index++] = temp;
                 }
             }

@@ -21,7 +21,9 @@ initlock(struct spinlock *lk, char *name)
 void
 acquire(struct spinlock *lk)
 {
+    //关中断以避免死锁
   push_off(); // disable interrupts to avoid deadlock.
+  // xv6设计的比较简单 直接不允许锁重入
   if(holding(lk))
     panic("acquire");
 
@@ -29,6 +31,8 @@ acquire(struct spinlock *lk)
   //   a5 = 1
   //   s1 = &lk->locked
   //   amoswap.w.aq a5, a5, (s1)
+  //类似java中的CAS
+  //如果lk->locked值为0的话 当前线程给它置为1并返回原值0 表示成功获取锁
   while(__sync_lock_test_and_set(&lk->locked, 1) != 0)
     ;
 
@@ -36,9 +40,11 @@ acquire(struct spinlock *lk)
   // past this point, to ensure that the critical section's memory
   // references happen strictly after the lock is acquired.
   // On RISC-V, this emits a fence instruction.
+  //内存屏障 保证读写不能越过这条指令 即必须要获取锁后才可以执行相应的指令
   __sync_synchronize();
 
   // Record info about lock acquisition for holding() and debugging.
+  //记录下cpu核的信息（才知道是哪个cpu获取了锁 也方便调试）
   lk->cpu = mycpu();
 }
 
@@ -46,6 +52,7 @@ acquire(struct spinlock *lk)
 void
 release(struct spinlock *lk)
 {
+    //当前进程必须要持有锁 才有得释放
   if(!holding(lk))
     panic("release");
 
@@ -68,11 +75,13 @@ release(struct spinlock *lk)
   //   amoswap.w zero, zero, (s1)
   __sync_lock_release(&lk->locked);
 
+  //开中断
   pop_off();
 }
 
 // Check whether this cpu is holding the lock.
 // Interrupts must be off.
+//判断进程是否持有锁
 int
 holding(struct spinlock *lk)
 {

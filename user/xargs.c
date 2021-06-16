@@ -15,15 +15,15 @@ int main(int argc, char *argv[])
     int n, args_index = 0;
     int i;
 //     example: echo hello too | xargs echo bye
-    printf("argc is %d\n",argc); // 3
-    printf("argv0 is %s\n",argv[0]); // xargs  argv[0]指向输入的程序路径及名称
+//    printf("argc is %d\n",argc); // 3
+//    printf("argv0 is %s\n",argv[0]); // xargs  argv[0]指向输入的程序路径及名称
     char* cmd = argv[1]; // echo
-    printf("current cmd is %s.\n", cmd);
+//    printf("current cmd is %s.\n", cmd);
     for (i = 1; i < argc; i++) params[args_index++] = argv[i];
-    printf("params are:\n");
-    int k = 0;
-    for(int i=1;i<argc;++i)
-        printf("%s\n",params[k++]);
+//    printf("params are:\n");
+//    int k = 0;
+//    for(int i=1;i<argc;++i)
+//        printf("%s\n",params[k++]);
     // 管道符前边的命令会直接执行完 并生成一个结果集
     // 从结果集中每读出一行命令 都fork()一个子进程去执行它
     while ((n = read(STDIN_FILENO, line, MAXLINE)) > 0)

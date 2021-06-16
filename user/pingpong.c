@@ -46,7 +46,7 @@ int main(int argc, char *argv[]){
         read(pfd[READEND], buffer, buffer_size);
         printf("%d: received %s\n",getpid(),buffer);
         write(cfd[WRITEEND],"pong",strlen("pong"));
-
+        //写完后再关闭写端
         close(cfd[WRITEEND]);
         close(pfd[READEND]);
     }else{
