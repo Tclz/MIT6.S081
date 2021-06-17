@@ -29,9 +29,11 @@ exec(char *path, char **argv)
   }
   ilock(ip);
 
+  //检查可执行文件的文件头
   // Check ELF header
   if(readi(ip, 0, (uint64)&elf, 0, sizeof(elf)) != sizeof(elf))
     goto bad;
+  //检查魔数
   if(elf.magic != ELF_MAGIC)
     goto bad;
 
@@ -39,6 +41,7 @@ exec(char *path, char **argv)
     goto bad;
 
   // Load program into memory.
+  //载入程序到内存
   for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
     if(readi(ip, 0, (uint64)&ph, off, sizeof(ph)) != sizeof(ph))
       goto bad;

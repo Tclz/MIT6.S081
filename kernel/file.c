@@ -16,6 +16,7 @@
 struct devsw devsw[NDEV];
 struct {
   struct spinlock lock;
+  //整个系统支持的最大文件数目是100
   struct file file[NFILE];
 } ftable;
 
@@ -25,7 +26,9 @@ fileinit(void)
   initlock(&ftable.lock, "ftable");
 }
 
+
 // Allocate a file structure.
+//分配文件结构
 struct file*
 filealloc(void)
 {
@@ -33,6 +36,7 @@ filealloc(void)
 
   acquire(&ftable.lock);
   for(f = ftable.file; f < ftable.file + NFILE; f++){
+      //如果某个文件结构体其ref字段为0 说明这个文件结构是空闲可用的
     if(f->ref == 0){
       f->ref = 1;
       release(&ftable.lock);
@@ -44,6 +48,7 @@ filealloc(void)
 }
 
 // Increment ref count for file f.
+//复制文件描述符 只是让指向某文件的引用数目加1
 struct file*
 filedup(struct file *f)
 {
@@ -56,6 +61,7 @@ filedup(struct file *f)
 }
 
 // Close file f.  (Decrement ref count, close when reaches 0.)
+//文件关闭
 void
 fileclose(struct file *f)
 {
@@ -64,15 +70,20 @@ fileclose(struct file *f)
   acquire(&ftable.lock);
   if(f->ref < 1)
     panic("fileclose");
+  //关闭文件时 文件引用数目减一
+  //如果引用数不为0 返回 说明文件并未真正关闭
   if(--f->ref > 0){
     release(&ftable.lock);
     return;
   }
+  //如果引用数为0 （文件真正被关闭）
   ff = *f;
   f->ref = 0;
+  //设置文件类型为NONE
   f->type = FD_NONE;
   release(&ftable.lock);
 
+  //如果是管道类型 调用管道的close方法
   if(ff.type == FD_PIPE){
     pipeclose(ff.pipe, ff.writable);
   } else if(ff.type == FD_INODE || ff.type == FD_DEVICE){
@@ -84,6 +95,7 @@ fileclose(struct file *f)
 
 // Get metadata about file f.
 // addr is a user virtual address, pointing to a struct stat.
+//获取文件的元数据信息
 int
 filestat(struct file *f, uint64 addr)
 {
@@ -94,6 +106,7 @@ filestat(struct file *f, uint64 addr)
     ilock(f->ip);
     stati(f->ip, &st);
     iunlock(f->ip);
+    //将文件元数据信息从内核拷贝到用户空间中
     if(copyout(p->pagetable, addr, (char *)&st, sizeof(st)) < 0)
       return -1;
     return 0;
@@ -107,17 +120,23 @@ int
 fileread(struct file *f, uint64 addr, int n)
 {
   int r = 0;
-
+  //如果文件不可读 直接返回-1
   if(f->readable == 0)
     return -1;
 
+  //根据文件类型执行相应的read操作
+  //如果该文件是管道类型
   if(f->type == FD_PIPE){
+      //调用管道读方法
     r = piperead(f->pipe, addr, n);
   } else if(f->type == FD_DEVICE){
+      //如果是设备
     if(f->major < 0 || f->major >= NDEV || !devsw[f->major].read)
       return -1;
     r = devsw[f->major].read(1, addr, n);
   } else if(f->type == FD_INODE){
+      //普通文件
+      //访问文件管理相关的结构先加锁
     ilock(f->ip);
     if((r = readi(f->ip, 1, addr, f->off, n)) > 0)
       f->off += r;
@@ -138,8 +157,9 @@ filewrite(struct file *f, uint64 addr, int n)
 
   if(f->writable == 0)
     return -1;
-
+  //根据文件类型执行相应的write操作
   if(f->type == FD_PIPE){
+      //执行写管道
     ret = pipewrite(f->pipe, addr, n);
   } else if(f->type == FD_DEVICE){
     if(f->major < 0 || f->major >= NDEV || !devsw[f->major].write)

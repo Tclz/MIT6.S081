@@ -37,12 +37,13 @@ argfd(int n, int *pfd, struct file **pf)
 
 // Allocate a file descriptor for the given file.
 // Takes over file reference from caller on success.
+//给指定的文件分配文件描述符
 static int
 fdalloc(struct file *f)
 {
   int fd;
   struct proc *p = myproc();
-
+    //每个进程最多支持16个fd
   for(fd = 0; fd < NOFILE; fd++){
     if(p->ofile[fd] == 0){
       p->ofile[fd] = f;
@@ -60,12 +61,14 @@ sys_dup(void)
 
   if(argfd(0, 0, &f) < 0)
     return -1;
+  //分配一个最小的可用文件描述符 指向文件f
   if((fd=fdalloc(f)) < 0)
     return -1;
+  //f的引用计数增加
   filedup(f);
   return fd;
 }
-
+//read调用
 uint64
 sys_read(void)
 {
@@ -77,7 +80,7 @@ sys_read(void)
     return -1;
   return fileread(f, p, n);
 }
-
+//write调用
 uint64
 sys_write(void)
 {
@@ -90,7 +93,7 @@ sys_write(void)
 
   return filewrite(f, p, n);
 }
-
+//close调用
 uint64
 sys_close(void)
 {
@@ -109,13 +112,14 @@ sys_fstat(void)
 {
   struct file *f;
   uint64 st; // user pointer to struct stat
-
+    //接收文件描述符参数和地址参数
   if(argfd(0, 0, &f) < 0 || argaddr(1, &st) < 0)
     return -1;
   return filestat(f, st);
 }
 
 // Create the path new as a link to the same inode as old.
+//创建普通文件的硬链接
 uint64
 sys_link(void)
 {
@@ -132,6 +136,7 @@ sys_link(void)
   }
 
   ilock(ip);
+  //不可以是目录文件
   if(ip->type == T_DIR){
     iunlockput(ip);
     end_op();
@@ -291,13 +296,14 @@ sys_open(void)
   struct file *f;
   struct inode *ip;
   int n;
-
+  //传入路径和文件权限
   if((n = argstr(0, path, MAXPATH)) < 0 || argint(1, &omode) < 0)
     return -1;
 
   begin_op();
 
   if(omode & O_CREATE){
+      //创建普通文件
     ip = create(path, T_FILE, 0, 0);
     if(ip == 0){
       end_op();
@@ -434,15 +440,17 @@ sys_exec(void)
       argv[i] = 0;
       break;
     }
+    //给参数分配内存？
     argv[i] = kalloc();
     if(argv[i] == 0)
       goto bad;
     if(fetchstr(uarg, argv[i], PGSIZE) < 0)
       goto bad;
   }
-
+    //具体的exec逻辑
   int ret = exec(path, argv);
 
+  //将申请的内存释放
   for(i = 0; i < NELEM(argv) && argv[i] != 0; i++)
     kfree(argv[i]);
 
@@ -454,6 +462,7 @@ sys_exec(void)
   return -1;
 }
 
+//pipe系统调用
 uint64
 sys_pipe(void)
 {
@@ -464,9 +473,12 @@ sys_pipe(void)
 
   if(argaddr(0, &fdarray) < 0)
     return -1;
+  // 申请两个指向文件结构的指针
+  //让它们指向同一个内存空间 并设置好读端和写端
   if(pipealloc(&rf, &wf) < 0)
     return -1;
   fd0 = -1;
+  //给指定的文件分配文件描述符
   if((fd0 = fdalloc(rf)) < 0 || (fd1 = fdalloc(wf)) < 0){
     if(fd0 >= 0)
       p->ofile[fd0] = 0;
@@ -474,6 +486,7 @@ sys_pipe(void)
     fileclose(wf);
     return -1;
   }
+  //将分配好的文件描述符返回给用户空间的接收数组
   if(copyout(p->pagetable, fdarray, (char*)&fd0, sizeof(fd0)) < 0 ||
      copyout(p->pagetable, fdarray+sizeof(fd0), (char *)&fd1, sizeof(fd1)) < 0){
     p->ofile[fd0] = 0;
