@@ -25,6 +25,8 @@ static struct {
 
 static char digits[] = "0123456789abcdef";
 
+
+//根据printf传入的%d %x %p 等格式写入到缓冲区
 static void
 printint(int xx, int base, int sign)
 {

@@ -217,6 +217,7 @@ kerneltrap()
   }
 
   // give up the CPU if this is a timer interrupt.
+  //如果定时器中断来自内核,说明cpu使用时间到，应该让出时间片?
   if(which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING)
     yield();
 
