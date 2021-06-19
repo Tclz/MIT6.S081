@@ -375,8 +375,10 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
+    //申请内存
     if((mem = kalloc()) == 0)
       goto err;
+    //拷贝
     memmove(mem, (char*)pa, PGSIZE);
     if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
       kfree(mem);
@@ -390,7 +392,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   return -1;
 }
 
-//lab3
+//lab3 添加用户映射到内核页表，使得内核可以直接识别来自用户空间的地址
 void
 u2kvmcopy(pagetable_t pagetable, pagetable_t kpagetable, uint64 oldsz, uint64 newsz)
 {
@@ -406,6 +408,7 @@ u2kvmcopy(pagetable_t pagetable, pagetable_t kpagetable, uint64 oldsz, uint64 ne
   {
     if ((pte_from = walk(pagetable, a, 0)) == 0)
       panic("u2kvmcopy: pte should exist");
+    //注意最后的参数1 表示访问到的pte无效时 允许给它分配物理页
     if ((pte_to = walk(kpagetable, a, 1)) == 0)
       panic("u2kvmcopy: walk fails");
     pa = PTE2PA(*pte_from);
@@ -465,6 +468,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
+    //两个虚拟地址交由mmu去查页表翻译成正确的物理地址
   return copyin_new(pagetable, dst, srcva, len);
 }
 
